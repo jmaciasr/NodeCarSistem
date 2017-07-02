@@ -1,40 +1,52 @@
-(function($, window){
+(function($, window) {
 	// constants
-	var BASE_URL = 'http://localhost:8080'; // server
+	const BASE_URL = 'http://localhost:8080'; // server
 	
 	// variables
 	var form = null;
 	var table = null;
-	
+	var styleForm = null;
+	var exportCsv = null;
+	var select = null;
 
-	function _loadTable(data){
+	/**
+	 * Load the car table
+	 * If data is passed the uses the data to load the table
+	 * If data is not passed then request the data to the server
+	 * @param {Object} data optional
+	 * @private
+	 */
+	function _loadTable(data) {
 		// clear the table content
 		table.find('tbody').html('');
 		
-		if(!data)
+		if(!data) {
 			$.ajax({
 				url: BASE_URL+'/cars',
-				type: 'GET',
-				// dataType: 'json'
+				type: 'GET'
 			}).then(_composeTBody, _logError);
-		else
+		}
+		else {
 			_composeTBody(data);
+		}
 	}
 	
 	/**
-	 
+	 * Compose the tbody for the cars table
+	 * @param {Array} data
+	 * @private
 	 */
-	function _composeTBody(data){
+	function _composeTBody(data) {
 		var tbody = $('<tbody></tbody>');
 		
 		// there are no cars
 		if(!data.total){
-			tbody.append($('<tr><th colspan="5" class="text-center">There are no cars.</th></tr>'));
+			tbody.append($('<tr><th colspan="8" class="text-center">There are no cars.</th></tr>'));
 			return table.append(tbody);
 		}
 		
 		// create the tds for echa car
-		data.records.forEach(function(car){
+		data.records.forEach(function(car) {
 			var tr = $('<tr></tr>');
 			tr.append($('<th>#'+car.id+'</th>'));
 			tr.append($('<td>'+car.model+'</td>'));
@@ -42,6 +54,7 @@
 			tr.append($('<td>'+car.year+'</td>'));
 			tr.append($('<td>'+car.price+'</td>'));
 			tr.append($('<td>'+car.color+'</td>'));
+			tr.append($('<td>'+car.styleCar+'</td>'));
 			var actions = $('<td width="150px"></td>');
 			actions.append(_composeEditButton(car));
 			actions.append(_composeDeleteButton(car));
@@ -51,21 +64,60 @@
 		table.append(tbody);
 	}
 	
-	/*
+	/**
+	 * Compose the styles select
+	 * @param {Array} data
+	 * @private
 	 */
-	function _composeDeleteButton(car){
+	function _composeOptions(data) {
+		select.html('');
+		data.records.forEach(function(style) {
+			var option = $('<option></option>');
+			option.text(style.name);
+			select.append(option);
+		});
+	}
+
+	/**
+	 * @param {Object} data optional
+	 * @private
+	 */
+	function _sendInputOption(data) {
+		select.html('');
+		
+		if(!data) {
+			$.ajax({
+				url: BASE_URL+'/carOptions',
+				type: 'GET'
+			}).then(_composeOptions, _logError);
+		}
+		else {
+			_composeOptions(data);
+		}
+	}
+
+	/**
+	 * Compose the delete button for each car row
+	 * @param {Object} car
+	 * @returns {*|HTMLElement}
+	 * @private
+	 */
+	function _composeDeleteButton(car) {
 		var button = $('<button class="btn btn-sm btn-danger pull-right">Delete</button>');
-		button.on('click', function(){
-			var message = 'Are you sure you want to delete '+car.model+' '+car.brand;
-			message += "\nThis action will delete the users permanently."
+		button.on('click', function() {
+			var message = 'Are you sure you want to delete '+car.model+' '+car.brand+' '+car.year+' '+car.price+' '+car.color+' '+car.styleCar;
+			message += "\nThis action will delete the car permanently."
 			if(confirm(message)) _deleteCar(car.id);
 		});
 		return button;
 	}
 	
-	/*
+	/**
+	 * Delete the car
+	 * @param {String|Number} id car id
+	 * @private
 	 */
-	function _deleteCar(id){
+	function _deleteCar(id) {
 		$.ajax({
 			url: BASE_URL+'/car',
 			type: 'DELETE',
@@ -73,11 +125,15 @@
 		}).then(_loadTable, _logError);
 	}
 	
-	/*
+	/**
+	 * Compose the edit button for each car row
+	 * @param {Object} car
+	 * @returns {*|HTMLElement}
+	 * @private
 	 */
-	function _composeEditButton(car){
+	function _composeEditButton(car) {
 		var button = $('<button class="btn btn-sm btn-primary">Edit</button>');
-		button.on('click', function(){
+		button.on('click', function() {
 			// load the data into the form
 			form[0].id.value = car.id;
 			form[0].model.value = car.model;
@@ -85,16 +141,18 @@
 			form[0].year.value = car.year;
 			form[0].price.value = car.price;
 			form[0].color.value = car.color;
-			console.log('edit', car);
+			form[0].styleCar.value = car.styleCar;
 		});
 		return button
 	}
 	
-	/*
+	/**
+	 * Submits the add/edit car form
+	 * @param {Object} event
+	 * @private
 	 */
-	function _submitForm(event){
+	function _submitForm(event) {
 		event.preventDefault();
-		var data = form.serializeArray();
 		var data = {
 			id: form[0].id.value,
 			model: form[0].model.value,
@@ -102,8 +160,8 @@
 			year: form[0].year.value,
 			price: form[0].price.value,
 			color: form[0].color.value,
+			styleCar: form[0].styleCar.value,
 		}
-		console.log('data', data);
 		
 		$.ajax({
 			url: BASE_URL+'/car',
@@ -117,23 +175,63 @@
 			_logError
 		);
 	}
+
+	/**
+	 * @param {Object} event
+	 * @private
+	 */
+	function _submitForm2(event) {
+		event.preventDefault();
+		var data = {
+			description: styleForm[0].description.value,
+			name: styleForm[0].nameStyle.value,
+		}
+		
+		$.ajax({
+			url: BASE_URL+'/carOptions',
+			type: 'POST',
+			data: data
+		}).then(
+			function (data){
+				styleForm[0].reset();
+				_sendInputOption(data);
+			},
+			_logError
+		);
+	}
+
+	function _composeCSV() {
+		exportCsv.on('click', function () {
+			$.ajax({
+				url: BASE_URL+'/csv',
+				type: 'POST',
+			})
+		});
+	}
 	
-	/*
+	/**
+	 * @param {Error|Object} error
+	 * @private
 	 */
 	function _logError(error){
 		console.error(error);
 	}
-	
-	/* app
+
+	/**
+	 * Starts the app
 	 * @private
 	 */
-	function _init(){
+	function _init() {
 		form = $('#carForm');
 		table = $('#cars');
-		
+		styleForm = $('#styleForm');
+		exportCsv = $('#exportCsv');
+		select = $('#styleCar');
 		_loadTable();
-		
-		form.on('submit', _submitForm)
+		_composeCSV();
+		_sendInputOption();
+		form.on('submit', _submitForm);
+		styleForm.on('submit', _submitForm2);
 	}
 	
 	_init();

@@ -1,7 +1,9 @@
 const fs = require('fs');
-const Car = require('../models/car');
 const querystring = require('querystring');
 const url = require('url');
+const Car = require('../models/car');
+const CarOptions = require('../models/carOptions');
+const CSV = require('../controllers/csv.js');
 
 const DEFAULT_DATA = {
 	records: [],
@@ -9,13 +11,18 @@ const DEFAULT_DATA = {
 	total: 0
 };
 const PATH = __dirname+'/../data/cars.json';
+const PATH_CSV = __dirname+'/../data/cars.csv';
+const PATH_OPTIONS = __dirname+'/../data/carOptions.json';
 
 module.exports = {
 	getAll,
 	create,
 	update,
 	remove,
-	options
+	options,
+	getOptions,	
+	createOptions,
+	createCsv
 };
 
 /**
@@ -23,7 +30,7 @@ module.exports = {
  * @param {Object} req
  * @param {Object} res
  */
-function getAll(req, res){
+function getAll(req, res) {
 	let data = '';
 	try{
 		data = require(PATH);
@@ -31,6 +38,36 @@ function getAll(req, res){
 		data = DEFAULT_DATA;
 	}
 	return _jsonResponse(res, data);
+}
+
+/**
+ * @param {Object} req
+ * @param {Object} res
+ */
+function getOptions(req, res) {
+	let data = '';
+	try{
+		data = require(PATH_OPTIONS);
+	}catch (err){ // empty json
+		data = DEFAULT_DATA;
+	}
+	return _jsonResponse(res, data);
+}
+
+function createCsv(req, res) {
+	let data = '';
+	try {
+		data = require(PATH);
+	}catch (err) {
+		data = DEFAULT_DATA;
+	}
+	
+	var result = CSV.create(PATH_CSV, data);
+	result.on('error', error => console.error('MY ERROR', error));
+	result.on('done', csv => {
+		console.log('file saved', CSV);
+	});
+	return _csvResponse(res, data);		
 }
 
 /**
@@ -60,13 +97,50 @@ function create(req, res){
 		
 		// save the data
 		fs.writeFile(PATH, JSON.stringify(data), err => {
-			if(err) return _errorResponse(res, 'you could not save new car.');
+			if(err) return _errorResponse(res, 'Could not save new car.');
 			return _jsonResponse(res, data);
 		});
+	
 	});
 }
 
-/*
+/**
+ * @param {Object} req
+ * @param {Object} res
+ */
+function createOptions(req, res){
+	let body = '';
+	req.on('data', chuck => body += chuck);
+	req.on('end', () => {
+		let params = querystring.parse(body);
+		let carStyles = new CarOptions(params);
+		if(!carStyles.valid()) return _errorResponse(res, 'Invalid style');
+		
+		let data = '';
+		try{
+			data = require(PATH_OPTIONS);
+		}catch (err){
+			data = DEFAULT_DATA;
+		}
+		
+		// update the data
+		data.records.push(carStyles);
+		data.total = data.records.length;
+		data.counter = data.records[data.records.length-1].id;
+		
+		// save the data
+		fs.writeFile(PATH_OPTIONS, JSON.stringify(data), err => {
+			if(err) return _errorResponse(res, 'Could not save new car.');
+			return _jsonResponse(res, data);
+		});
+	
+	});
+}
+
+/**
+ * Updates a car
+ * @param {Object} req
+ * @param {Object} res
  */
 function update(req, res){
 	console.log('update car');
@@ -75,13 +149,13 @@ function update(req, res){
 	req.on('data', chuck => body += chuck);
 	req.on('end', () => {
 		let params = querystring.parse(body);
-		let car = new car(params);
-		if(!car.valid()) return _errorResponse(res, 'is not a car');
+		let car = new Car(params);
+		if(!car.valid()) return _errorResponse(res, 'Invalid car');
 		
-		let idx = _findcar(params.id, true);
+		let idx = _findCar(params.id, true);
 		
 		console.log('idx', idx);
-		if(idx === -1) return _errorResponse(res, 'you could not find the user to update.');
+		if(idx === -1) return _errorResponse(res, 'Could not find the car to update.');
 		
 		let data = require(PATH);
 		data.records[idx] = car;
@@ -89,7 +163,7 @@ function update(req, res){
 		
 		data = _toJson(data);
 		fs.writeFile(PATH, data, err => {
-			if(err) return _errorResponse(res, 'you could not update the user.');
+			if(err) return _errorResponse(res, 'Could not update the car.');
 			return _jsonResponse(res, data, false);
 		})
 		
@@ -113,24 +187,29 @@ function remove(req, res){
 	req.on('data', chuck => body += chuck);
 	req.on('end', () => {
 		let params = querystring.parse(body);
-		let idx = _findcar(params.id, true)
+		let idx = _findCar(params.id, true)
 		
-		if(idx === -1) return _errorResponse(res, 'you couldnt find the car to delete.');
+		if(idx === -1) return _errorResponse(res, 'Could not find the car to delete.');
 		
 		// remove the car
 		data.records.splice(idx, 1);
 		data.total = data.records.length;
 		data = _toJson(data);
 		fs.writeFile(PATH, data, err => {
-			if(err) return _errorResponse(res, 'you couldnt delete user');
+			if(err) return _errorResponse(res, 'Could not delete car');
 			return _jsonResponse(res, data, false);
 		});
 	});
 }
 
-/*
+/**
+ * Finds a car by id
+ * @param {String} id
+ * @param {Boolean} getIdx
+ * @returns {*}
+ * @private
  */
-function _findcar(id, getIdx = false){
+function _findCar(id, getIdx = false){
 	let data = '';
 	let idx = -1;
 	
@@ -180,7 +259,7 @@ function _toJson(data){
 
 /**
  * Response for json data
- * @param {Object res
+ * @param {Object res}
  * @param {Object|Array} data
  * @param toJson
  * @private
@@ -192,6 +271,21 @@ function _jsonResponse(res, data, toJson = true){
 	});
 	data = toJson ? _toJson(data) : data;
 	res.write(data);
+	return res.end();
+}
+
+/**
+ * @param {Object res}
+ * @param {Object|Array} data
+ * @private
+ */
+function _csvResponse(res, data){
+	res.writeHead(200, {
+		'Content-Type': 'text/csv',
+		'Access-Control-Allow-Origin': '*'
+	});
+	data = _toJson(data);
+	res.write(data, 'binary');
 	return res.end();
 }
 
